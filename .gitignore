@@ -1,1 +1,1 @@
-/gus_bdl/*.ipynb # ignore jupyter notebooks
+*.ipynb

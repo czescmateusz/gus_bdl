@@ -5,11 +5,15 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional, Any, Dict
+from gevent import idle
 
 import requests
 from requests import Response
 import urllib
 import json
+
+from pandas import json_normalize
+from pandas import DataFrame
 
 AnyDict = Optional[Dict[str, Any]]
 
@@ -20,25 +24,22 @@ class Endpoints:
     """
     BDL endpoints
     """
-    subjects = 'https://bdl.stat.gov.pl/api/v1/subjects?'
-    _data = 'https://bdl.stat.gov.pl/api/v1/data/'
+    _api = 'https://bdl.stat.gov.pl/api/v1'
+    subjects = '%s/subjects?' % _api
+    search_subjects = '%s/search?' % _api
+    byvariable = '%s/data/by-variable/' % _api 
+    localities = '%s/data/localities/by-variable/' % _api
+    units = '%s/units?' % _api 
+    aggregates = '%s/aggregates?' % _api
+    measures = '%s/measures?' % _api
+    levels = '%s/levels?' % _api
+    variables = '%s/variables?' % _api
+    years = '%s/years?' % _api
+
 
 class AbstractClient(ABC):
     """
-    Abstract GET client for dumping data from:
-
-    For each endpoint, there is a child class with `get` method, that is
-    updating or passing additional arguments to query.
-    Refer to api documentation for details.
-
-    - dump endpoint: https://www.saos.org.pl/api/dump
-    returns full documents.
-    - search endpoint: https://www.saos.org.pl/api/search
-    returns truncated documents, but can be queried
-    - single judgement endpoint: https://www.saos.org.pl/api/judgments/JUDGMENT_ID
-
-    API documentation:
-       https://www.saos.org.pl/help/index.php/dokumentacja-api/
+    Abstract GET client for dumping data
     """
 
     def __init__(self):
@@ -59,6 +60,7 @@ class AbstractClient(ABC):
         :param params: optional, parameters to be used in API call.
         if not provided, query is using defaults, e.g. first page of results.
         :return: Response object
+ 
         """
         pass
 
@@ -69,8 +71,27 @@ class SubjectListClient(AbstractClient):
     """
     Client for fetching data from BDL on subjects.
     """
-
     def get(self, params: Optional[Dict[str, Any]] = None) -> Response:
-        resp = requests.get(Endpoints.subjects, params, verify=False)
+        resp = requests.get(Endpoints.subjects, params).json()
         json_normalize(resp['results']).drop('hasVariables', axis=1)
         return json_normalize(resp['results']).drop('hasVariables', axis=1)
+
+class VariablesListClient(AbstractClient):
+    """
+    Client for fetching data from BDL on subjects.
+    """
+    def get(self, params: Optional[Dict[str, Any]] = None) -> Response:
+        resp = requests.get(Endpoints.subjects).json()
+        json_normalize(resp['results']).drop('hasVariables', axis=1)
+        return json_normalize(resp['results']).drop('hasVariables', axis=1)
+
+class DataClient(AbstractClient):
+    """
+    Client for fetching data from BDL. 
+    """
+    def get(self, varid, params: Optional[Dict[str, Any]] = None) -> Response:
+        resp = requests.get(Endpoints.byvariable + varid + '?', params).json()
+        results = json_normalize(resp['results'])
+        valseries = results.set_index('name')['values'].explode()
+        return DataFrame(valseries.tolist(), index=valseries.index).reset_index()
+        
